@@ -1,0 +1,71 @@
+name: Daily Module Release
+
+on:
+  schedule:
+    # Berlin is UTC+1 (CET) in winter and UTC+2 (CEST) in summer.
+    # 12:00 Berlin time corresponds to 10:00 UTC in summer and 11:00 UTC in winter.
+    - cron: '0 10 * * *'
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Berlin time
+        id: check-time
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            BERLIN_HOUR=$(TZ="Europe/Berlin" date +'%H')
+            if [ "$BERLIN_HOUR" != "12" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Current Berlin hour is $BERLIN_HOUR (not 12:00). Skipping run."
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        if: steps.check-time.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.check-time.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        if: steps.check-time.outputs.skip != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch modules
+        if: steps.check-time.outputs.skip != 'true'
+        run: |
+          python updater.py
+
+      - name: Create Release
+        if: steps.check-time.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG=$(TZ="Europe/Berlin" date +'v%Y.%m.%d-%H%M')
+          RELEASE_TITLE=$(TZ="Europe/Berlin" date +'Release %Y-%m-%d %H:%M')
+
+          shopt -s nullglob
+          MODULE_FILES=(modules/*)
+          if [ ${#MODULE_FILES[@]} -eq 0 ]; then
+            echo "Error: No module files found in ./modules"
+            exit 1
+          fi
+
+          echo "Creating release $RELEASE_TAG with title '$RELEASE_TITLE' and ${#MODULE_FILES[@]} assets..."
+          gh release create "$RELEASE_TAG" "${MODULE_FILES[@]}" \
+            --title "$RELEASE_TITLE" \
+            --notes "Automated daily release of modules created on $(TZ='Europe/Berlin' date +'%Y-%m-%d %H:%M:%S %Z')."
