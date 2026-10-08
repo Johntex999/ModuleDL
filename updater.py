@@ -6,6 +6,11 @@ import re
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 MODULES_DIR = "./modules"
 
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ModuleDL-Updater/1.0"
+})
+
 GITHUB_REPOS = [
     "Pixel-Props/BetterKnownInstalled", "bindhosts/bindhosts", "KOWX712/PlayIntegrityFix",
     "JingMatrix/LSPosed", "sidex15/susfs4ksu-module", "JingMatrix/TEESimulator",
@@ -18,7 +23,7 @@ def download_github_release(repo_path):
     logging.info(f"--- Fetching GitHub: {repo_path} ---")
     try:
         # Get tag name by redirecting on /releases/latest
-        r = requests.get(f"https://github.com/{repo_path}/releases/latest", allow_redirects=True)
+        r = session.get(f"https://github.com/{repo_path}/releases/latest", allow_redirects=True, timeout=30)
         if "/tag/" not in r.url:
             logging.warning(f"Could not find latest tag for {repo_path}")
             return
@@ -29,7 +34,7 @@ def download_github_release(repo_path):
         
         # Get expanded assets page
         assets_url = f"https://github.com/{actual_repo}/releases/expanded_assets/{tag}"
-        assets_resp = requests.get(assets_url)
+        assets_resp = session.get(assets_url, timeout=30)
         assets_resp.raise_for_status()
         
         # Find all download links (href starts with /repo/releases/download/tag/...)
@@ -59,7 +64,7 @@ def download_github_release(repo_path):
         download_url = f"https://github.com{target_link}"
         
         out_path = os.path.join(MODULES_DIR, filename)
-        with requests.get(download_url, stream=True) as download_r:
+        with session.get(download_url, stream=True, timeout=60) as download_r:
             download_r.raise_for_status()
             with open(out_path, 'wb') as f:
                 for chunk in download_r.iter_content(chunk_size=8192):
@@ -72,7 +77,7 @@ def download_rezygisk():
     logging.info("--- Fetching ReZygisk (via nightly.link) ---")
     try:
         url = "https://nightly.link/PerformanC/ReZygisk/workflows/trusted_ci/main"
-        resp = requests.get(url)
+        resp = session.get(url, timeout=30)
         resp.raise_for_status()
         
         # Find hrefs ending with -release.zip
@@ -85,7 +90,7 @@ def download_rezygisk():
         filename = download_url.split("/")[-1]
         out_path = os.path.join(MODULES_DIR, filename)
         
-        with requests.get(download_url, stream=True) as download_r:
+        with session.get(download_url, stream=True, timeout=60) as download_r:
             download_r.raise_for_status()
             with open(out_path, 'wb') as f:
                 for chunk in download_r.iter_content(chunk_size=8192):

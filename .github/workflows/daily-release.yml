@@ -19,10 +19,18 @@ jobs:
         id: check-time
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            BERLIN_HOUR=$(TZ="Europe/Berlin" date +'%H')
-            if [ "$BERLIN_HOUR" != "12" ]; then
+            BERLIN_TZ=$(TZ="Europe/Berlin" date +'%Z')
+            SCHEDULE="${{ github.event.schedule }}"
+            # 10:00 UTC corresponds to 12:00 Berlin time in CEST (summer).
+            # 11:00 UTC corresponds to 12:00 Berlin time in CET (winter).
+            if [ "$SCHEDULE" = "0 10 * * *" ] && [ "$BERLIN_TZ" != "CEST" ]; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "Current Berlin hour is $BERLIN_HOUR (not 12:00). Skipping run."
+              echo "Triggered by summer schedule (10:00 UTC), but Berlin is in $BERLIN_TZ. Skipping."
+              exit 0
+            fi
+            if [ "$SCHEDULE" = "0 11 * * *" ] && [ "$BERLIN_TZ" != "CET" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "Triggered by winter schedule (11:00 UTC), but Berlin is in $BERLIN_TZ. Skipping."
               exit 0
             fi
           fi
@@ -53,6 +61,7 @@ jobs:
       - name: Create Release
         if: steps.check-time.outputs.skip != 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE_TAG=$(TZ="Europe/Berlin" date +'v%Y.%m.%d-%H%M')
